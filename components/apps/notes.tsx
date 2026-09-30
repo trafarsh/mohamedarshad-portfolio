@@ -3,70 +3,44 @@
 import type React from "react"
 
 import { useState } from "react"
+import { Plus, Trash2, Pencil, Check } from "lucide-react"
+import { profile, skills } from "@/lib/profile"
+import { projects } from "@/data/projects"
 
 interface NotesProps {
   isDarkMode?: boolean
 }
 
-export default function Notes({ isDarkMode = true }: NotesProps) {
-  const [notes, setNotes] = useState([
-    {
-      id: 1,
-      title: "About Me",
-      content: `# Mohamed Arshad M
-Full Stack Developer & Flutter Specialist
+interface Note {
+  id: number
+  title: string
+  content: string
+  date: string
+}
+
+const aboutMe = `# ${profile.name}
+${profile.role}
+
+${profile.bio}
 
 ## Skills
-### Frontend
-- React/Next.js
-- Flutter/Dart
-- TypeScript/JavaScript
-- Tailwind CSS/Material Design
-- UI/UX Design
-- Responsive Web Development
-- Progressive Web Apps (PWA)
-
-### Backend
-- Node.js/Express
-- Firebase/Firestore
-- Supabase
-- RESTful APIs/GraphQL
-- SQL (MySQL, PostgreSQL)
-- NoSQL (MongoDB, Firebase)
-- Serverless Architecture
-
-### Mobile Development
-- Flutter (iOS & Android)
-- Native Features Integration
-- State Management (Provider, Riverpod, Bloc)
-- Firebase Integration
-- App Store & Play Store Deployment
-
-### DevOps & Tools
-- Git/GitHub
-- Docker
-- CI/CD Pipelines
-- Agile/Scrum Methodologies
-- Cloud Services (Firebase, AWS)
+${Object.entries(skills)
+  .map(([group, items]) => `### ${group}\n${items.map((item) => `- ${item}`).join("\n")}`)
+  .join("\n\n")}
 
 ## Experience
 Senior Full Stack & Flutter Developer based in Coimbatore, India. Specializing in building scalable web and mobile applications with modern technologies. Experienced in delivering end-to-end solutions from concept to deployment.
 
 ## Projects
-- AI Trip Architect - Travel planning application
-- E-Commerce Platform - Full-stack shopping solution
-- Food Delivery App - Real-time order management system
+${projects.map((project) => `- ${project.title} — ${project.liveUrl}`).join("\n")}
 
 ## Contact
-Email: mohamedarshad1507@gmail.com
-Location: Coimbatore, Tamil Nadu, India
-Portfolio: yourportfolio.com`,
-      date: "Today, 10:30 AM",
-    },
-    {
-      id: 2,
-      title: "Services & Pricing",
-      content: `# Services & Pricing
+Email: ${profile.email}
+GitHub: ${profile.github.url}
+LinkedIn: ${profile.linkedin.url}
+Location: ${profile.location}`
+
+const services = `# Services & Pricing
 
 ## Web Development
 - Custom Website Development
@@ -91,36 +65,126 @@ Portfolio: yourportfolio.com`,
 - Project-Based: Custom quotes
 - Retainer: Monthly packages available
 
-Contact for detailed pricing and project discussion.`,
-      date: "Yesterday, 3:15 PM",
-    },
-  ])
+Contact for detailed pricing and project discussion.`
 
+const initialNotes: Note[] = [
+  { id: 1, title: "About Me", content: aboutMe, date: "Today, 10:30 AM" },
+  { id: 2, title: "Services & Pricing", content: services, date: "Yesterday, 3:15 PM" },
+]
+
+// Renders inline URLs and emails as links
+function renderInline(text: string): React.ReactNode[] {
+  return text.split(/(https?:\/\/[^\s]+|[\w.+-]+@[\w-]+\.[\w.]+)/g).map((part, index) => {
+    if (/^https?:\/\//.test(part)) {
+      return (
+        <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">
+          {part}
+        </a>
+      )
+    }
+    if (/^[\w.+-]+@[\w-]+\.[\w.]+$/.test(part)) {
+      return (
+        <a key={index} href={`mailto:${part}`} className="text-blue-500 hover:underline">
+          {part}
+        </a>
+      )
+    }
+    return part
+  })
+}
+
+// A tiny markdown renderer for headings, bullet lists and paragraphs
+function NoteView({ content, isDarkMode }: { content: string; isDarkMode: boolean }) {
+  const blocks: React.ReactNode[] = []
+  let listItems: string[] = []
+
+  const flushList = () => {
+    if (listItems.length === 0) return
+    blocks.push(
+      <ul key={`list-${blocks.length}`} className="list-disc pl-6 mb-3 space-y-0.5">
+        {listItems.map((item, i) => (
+          <li key={i}>{renderInline(item)}</li>
+        ))}
+      </ul>,
+    )
+    listItems = []
+  }
+
+  content.split("\n").forEach((line, index) => {
+    if (line.startsWith("- ")) {
+      listItems.push(line.slice(2))
+      return
+    }
+    flushList()
+
+    if (line.startsWith("### ")) {
+      blocks.push(
+        <h3 key={index} className="text-base font-semibold mt-3 mb-1">
+          {line.slice(4)}
+        </h3>,
+      )
+    } else if (line.startsWith("## ")) {
+      blocks.push(
+        <h2 key={index} className="text-xl font-bold mt-5 mb-2">
+          {line.slice(3)}
+        </h2>,
+      )
+    } else if (line.startsWith("# ")) {
+      blocks.push(
+        <h1 key={index} className="text-2xl font-bold mb-1">
+          {line.slice(2)}
+        </h1>,
+      )
+    } else if (line.trim()) {
+      blocks.push(
+        <p key={index} className={`mb-2 leading-relaxed ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
+          {renderInline(line)}
+        </p>,
+      )
+    }
+  })
+  flushList()
+
+  return <div className="max-w-2xl">{blocks}</div>
+}
+
+export default function Notes({ isDarkMode = true }: NotesProps) {
+  const [notes, setNotes] = useState<Note[]>(initialNotes)
   const [selectedNoteId, setSelectedNoteId] = useState(1)
-  const [editableContent, setEditableContent] = useState("")
+  const [isEditing, setIsEditing] = useState(false)
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId)
 
   const handleNoteSelect = (id: number) => {
     setSelectedNoteId(id)
-    const note = notes.find((n) => n.id === id)
-    if (note) {
-      setEditableContent(note.content)
-    }
+    setIsEditing(false)
   }
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditableContent(e.target.value)
-
-    // Update the note content
-    setNotes(
-      notes.map((note) => {
-        if (note.id === selectedNoteId) {
-          return { ...note, content: e.target.value }
-        }
-        return note
-      }),
+    const content = e.target.value
+    const firstLine = content.split("\n").find((line) => line.trim()) ?? ""
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === selectedNoteId
+          ? { ...note, content, title: firstLine.replace(/^#+\s*/, "").slice(0, 60) || "New Note" }
+          : note,
+      ),
     )
+  }
+
+  const createNote = () => {
+    const id = Math.max(0, ...notes.map((n) => n.id)) + 1
+    const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    setNotes((prev) => [{ id, title: "New Note", content: "", date: `Today, ${time}` }, ...prev])
+    setSelectedNoteId(id)
+    setIsEditing(true)
+  }
+
+  const deleteNote = (id: number) => {
+    const remaining = notes.filter((note) => note.id !== id)
+    setNotes(remaining)
+    setSelectedNoteId(remaining[0]?.id ?? 0)
+    setIsEditing(false)
   }
 
   const textColor = isDarkMode ? "text-white" : "text-gray-800"
@@ -128,57 +192,77 @@ Contact for detailed pricing and project discussion.`,
   const sidebarBg = isDarkMode ? "bg-gray-800" : "bg-gray-100"
   const borderColor = isDarkMode ? "border-gray-700" : "border-gray-200"
   const hoverBg = isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"
-  const selectedBg = isDarkMode ? "bg-gray-700" : "bg-gray-300"
+  const selectedBg = isDarkMode ? "bg-yellow-600/40" : "bg-yellow-200"
+  const iconButton = `w-7 h-7 rounded-md flex items-center justify-center ${hoverBg}`
 
   return (
     <div className={`flex h-full ${bgColor} ${textColor}`}>
       {/* Sidebar */}
-      <div className={`w-64 ${sidebarBg} border-r ${borderColor} flex flex-col`}>
-        <div className="p-3 border-b border-gray-700 flex justify-between items-center">
+      <div className={`w-36 sm:w-60 shrink-0 ${sidebarBg} border-r ${borderColor} flex flex-col`}>
+        <div className={`p-3 border-b ${borderColor} flex justify-between items-center`}>
           <h2 className="font-medium">Notes</h2>
-          <button className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-white">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
+          <button className={iconButton} onClick={createNote} aria-label="New note" title="New note">
+            <Plus className="h-4 w-4" />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1">
+        <div className="overflow-y-auto flex-1 p-1.5 space-y-1">
           {notes.map((note) => (
-            <div
+            <button
               key={note.id}
-              className={`p-3 cursor-pointer ${selectedNoteId === note.id ? selectedBg : hoverBg}`}
+              className={`w-full text-left p-2.5 rounded-md ${selectedNoteId === note.id ? selectedBg : hoverBg}`}
               onClick={() => handleNoteSelect(note.id)}
             >
-              <h3 className="font-medium truncate">{note.title}</h3>
-              <p className="text-xs text-gray-500 mt-1">{note.date}</p>
-              <p className={`text-sm mt-1 truncate ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                {note.content.split("\n")[0].replace(/^#+ /, "")}
-              </p>
-            </div>
+              <h3 className="font-medium truncate text-sm">{note.title}</h3>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">{note.date}</p>
+            </button>
           ))}
         </div>
       </div>
 
       {/* Note content */}
-      <div className="flex-1 flex flex-col">
-        {selectedNote && (
+      <div className="flex-1 flex flex-col min-w-0">
+        {selectedNote ? (
           <>
-            <div className={`p-3 border-b ${borderColor}`}>
-              <h2 className="font-medium">{selectedNote.title}</h2>
-              <p className="text-xs text-gray-500">{selectedNote.date}</p>
+            <div className={`px-4 py-2 border-b ${borderColor} flex items-center justify-between gap-2`}>
+              <p className="text-xs text-gray-500 truncate">{selectedNote.date}</p>
+              <div className="flex gap-1">
+                <button
+                  className={iconButton}
+                  onClick={() => setIsEditing(!isEditing)}
+                  aria-label={isEditing ? "Done editing" : "Edit note"}
+                  title={isEditing ? "Done" : "Edit"}
+                >
+                  {isEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                </button>
+                <button
+                  className={iconButton}
+                  onClick={() => deleteNote(selectedNote.id)}
+                  aria-label="Delete note"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div className="flex-1 p-4 overflow-auto">
-              <textarea
-                className={`w-full h-full resize-none ${bgColor} ${textColor} focus:outline-none`}
-                value={selectedNote.content}
-                onChange={handleContentChange}
-              />
+            <div className="flex-1 p-4 sm:p-6 overflow-auto">
+              {isEditing ? (
+                <textarea
+                  className={`w-full h-full resize-none ${bgColor} ${textColor} focus:outline-none font-mono text-sm`}
+                  value={selectedNote.content}
+                  onChange={handleContentChange}
+                  placeholder="Start typing… (# Heading, - bullet)"
+                  aria-label="Note content"
+                  autoFocus
+                />
+              ) : selectedNote.content.trim() ? (
+                <NoteView content={selectedNote.content} isDarkMode={isDarkMode} />
+              ) : (
+                <p className="text-gray-500 text-sm">Empty note — click the pencil to write something.</p>
+              )}
             </div>
           </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">No note selected</div>
         )}
       </div>
     </div>

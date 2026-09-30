@@ -1,173 +1,226 @@
 "use client"
 
 import { useState } from "react"
-import { User, Shield, Wifi, Bluetooth, Bell, DiscIcon as Display, Clock, Keyboard, Mouse, Globe } from "lucide-react"
+import { User, Wifi, Volume2, Monitor, Palette, Keyboard, Info } from "lucide-react"
+import { useSystem } from "@/components/system-context"
+import { profile } from "@/lib/profile"
 
-export default function Settings() {
-  const [activeSection, setActiveSection] = useState("general")
+interface SettingsProps {
+  isDarkMode?: boolean
+}
 
-  const sections = [
-    { id: "general", name: "General", icon: <Globe className="w-5 h-5" /> },
-    { id: "appearance", name: "Appearance", icon: <Display className="w-5 h-5" /> },
-    { id: "wifi", name: "Wi-Fi", icon: <Wifi className="w-5 h-5" /> },
-    { id: "bluetooth", name: "Bluetooth", icon: <Bluetooth className="w-5 h-5" /> },
-    { id: "notifications", name: "Notifications", icon: <Bell className="w-5 h-5" /> },
-    { id: "users", name: "Users & Groups", icon: <User className="w-5 h-5" /> },
-    { id: "security", name: "Security", icon: <Shield className="w-5 h-5" /> },
-    { id: "keyboard", name: "Keyboard", icon: <Keyboard className="w-5 h-5" /> },
-    { id: "mouse", name: "Mouse", icon: <Mouse className="w-5 h-5" /> },
-    { id: "time", name: "Date & Time", icon: <Clock className="w-5 h-5" /> },
-  ]
+const sections = [
+  { id: "appearance", name: "Appearance", icon: Palette },
+  { id: "display", name: "Displays", icon: Monitor },
+  { id: "sound", name: "Sound", icon: Volume2 },
+  { id: "wifi", name: "Wi-Fi", icon: Wifi },
+  { id: "keyboard", name: "Keyboard Shortcuts", icon: Keyboard },
+  { id: "users", name: "Users & Groups", icon: User },
+  { id: "about", name: "About", icon: Info },
+] as const
+
+type SectionId = (typeof sections)[number]["id"]
+
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative w-10 h-6 rounded-full transition-colors ${checked ? "bg-blue-500" : "bg-gray-400"}`}
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-4" : ""
+        }`}
+      />
+    </button>
+  )
+}
+
+export default function Settings({ isDarkMode = true }: SettingsProps) {
+  const system = useSystem()
+  const [activeSection, setActiveSection] = useState<SectionId>("appearance")
+
+  const sidebarBg = isDarkMode ? "bg-gray-800/70" : "bg-gray-100"
+  const cardBg = isDarkMode ? "bg-gray-800" : "bg-gray-50 border border-gray-200"
+  const mutedText = isDarkMode ? "text-gray-400" : "text-gray-500"
+  const rowClass = "flex items-center justify-between gap-4 py-3"
+  const divider = isDarkMode ? "divide-gray-700" : "divide-gray-200"
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case "appearance":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">Appearance</h3>
+            <div className="flex gap-4 mb-6">
+              {[
+                { label: "Light", dark: false, preview: "bg-white", bar: "bg-gray-200" },
+                { label: "Dark", dark: true, preview: "bg-gray-800", bar: "bg-gray-700" },
+              ].map((option) => (
+                <button
+                  key={option.label}
+                  onClick={() => system.setDarkMode(option.dark)}
+                  className="flex flex-col items-center"
+                  aria-pressed={system.isDarkMode === option.dark}
+                >
+                  <span
+                    className={`block p-1 rounded-lg border-2 ${
+                      system.isDarkMode === option.dark ? "border-blue-500" : "border-transparent"
+                    }`}
+                  >
+                    <span className={`${option.preview} w-28 h-20 rounded flex flex-col overflow-hidden shadow`}>
+                      <span className={`h-4 ${option.bar}`} />
+                    </span>
+                  </span>
+                  <span className="text-sm mt-1">{option.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className={`text-sm ${mutedText}`}>
+              Changes the wallpaper, windows and apps. Your choice is remembered next time you visit.
+            </p>
+          </>
+        )
+
+      case "display":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">Displays</h3>
+            <div className={`${cardBg} rounded-lg px-4`}>
+              <div className={rowClass}>
+                <label htmlFor="settings-brightness">Brightness</label>
+                <input
+                  id="settings-brightness"
+                  type="range"
+                  min={10}
+                  max={100}
+                  value={system.brightness}
+                  onChange={(e) => system.setBrightness(Number(e.target.value))}
+                  className="w-48 accent-blue-500"
+                />
+              </div>
+            </div>
+          </>
+        )
+
+      case "sound":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">Sound</h3>
+            <div className={`${cardBg} rounded-lg px-4`}>
+              <div className={rowClass}>
+                <label htmlFor="settings-volume">Output volume</label>
+                <input
+                  id="settings-volume"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={system.volume}
+                  onChange={(e) => system.setVolume(Number(e.target.value))}
+                  className="w-48 accent-blue-500"
+                />
+              </div>
+            </div>
+          </>
+        )
+
+      case "wifi":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">Wi-Fi</h3>
+            <div className={`${cardBg} rounded-lg px-4 divide-y ${divider}`}>
+              <div className={rowClass}>
+                <span>Wi-Fi</span>
+                <Toggle checked={system.wifiEnabled} onChange={system.setWifiEnabled} label="Wi-Fi" />
+              </div>
+              <div className={rowClass}>
+                <span>Network</span>
+                <span className={mutedText}>{system.wifiEnabled ? "Portfolio-5G" : "Not connected"}</span>
+              </div>
+            </div>
+          </>
+        )
+
+      case "keyboard":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">Keyboard Shortcuts</h3>
+            <div className={`${cardBg} rounded-lg px-4 divide-y ${divider}`}>
+              {[
+                ["Spotlight search", "⌘K / Ctrl+K / Ctrl+Space"],
+                ["Close menus & overlays", "Esc"],
+                ["Maximize / restore window", "Double-click title bar"],
+                ["Snake: move / pause", "Arrow keys / Space"],
+                ["Terminal: history / complete", "↑ ↓ / Tab"],
+              ].map(([action, keys]) => (
+                <div key={action} className={rowClass}>
+                  <span>{action}</span>
+                  <kbd className={`text-xs px-2 py-0.5 rounded ${isDarkMode ? "bg-gray-700" : "bg-gray-200"}`}>{keys}</kbd>
+                </div>
+              ))}
+            </div>
+          </>
+        )
+
+      case "users":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">Users & Groups</h3>
+            <div className={`${cardBg} rounded-lg p-4 flex items-center gap-4`}>
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-slate-600 to-slate-900 flex items-center justify-center text-white text-2xl font-bold">
+                {profile.firstName.charAt(0)}
+              </div>
+              <div>
+                <p className="font-medium">{profile.name}</p>
+                <p className={`text-sm ${mutedText}`}>Admin · {profile.role}</p>
+              </div>
+            </div>
+          </>
+        )
+
+      case "about":
+        return (
+          <>
+            <h3 className="text-lg font-medium mb-3">About</h3>
+            <div className={`${cardBg} rounded-lg px-4 divide-y ${divider}`}>
+              {[
+                ["Name", `${profile.firstName}'s MacBook Portfolio`],
+                ["Owner", profile.name],
+                ["Location", profile.location],
+                ["Framework", "Next.js + React + Tailwind CSS"],
+              ].map(([label, value]) => (
+                <div key={label} className={rowClass}>
+                  <span>{label}</span>
+                  <span className={`${mutedText} text-right`}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )
+    }
+  }
 
   return (
     <div className="flex h-full">
-      {/* Sidebar */}
-      <div className="w-64 bg-gray-100 p-2">
-        <div className="space-y-1">
-          {sections.map((section) => (
-            <div
-              key={section.id}
-              className={`flex items-center px-3 py-2 rounded cursor-pointer ${
-                activeSection === section.id ? "bg-blue-500 text-white" : "hover:bg-gray-200"
-              }`}
-              onClick={() => setActiveSection(section.id)}
-            >
-              <div className="mr-3">{section.icon}</div>
-              <span>{section.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <nav className={`w-44 sm:w-56 shrink-0 ${sidebarBg} p-2 overflow-y-auto`} aria-label="Settings sections">
+        {sections.map(({ id, name, icon: Icon }) => (
+          <button
+            key={id}
+            className={`w-full flex items-center px-3 py-1.5 rounded-md text-sm text-left ${
+              activeSection === id ? "bg-blue-500 text-white" : isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"
+            }`}
+            onClick={() => setActiveSection(id)}
+          >
+            <Icon className="w-4 h-4 mr-2.5 shrink-0" />
+            <span className="truncate">{name}</span>
+          </button>
+        ))}
+      </nav>
 
-      {/* Content */}
-      <div className="flex-1 p-6">
-        {activeSection === "general" && (
-          <div>
-            <h2 className="text-2xl font-semibold mb-6">General</h2>
-
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium mb-3">About</h3>
-                <div className="bg-gray-100 p-4 rounded-lg">
-                  <p className="mb-2">
-                    <strong>macOS Portfolio:</strong> Version 1.0
-                  </p>
-                  <p className="mb-2">
-                    <strong>Chip:</strong> Apple M1
-                  </p>
-                  <p>
-                    <strong>Serial Number:</strong> PORTFOLIO123456
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium mb-3">Software Update</h3>
-                <div className="bg-gray-100 p-4 rounded-lg flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Your portfolio is up to date</p>
-                    <p className="text-sm text-gray-600">macOS Portfolio 1.0</p>
-                  </div>
-                  <button className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Check Now</button>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium mb-3">Language & Region</h3>
-                <div className="bg-gray-100 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="font-medium">Preferred language</p>
-                    <select className="px-3 py-1 border rounded">
-                      <option>English (US)</option>
-                      <option>Spanish</option>
-                      <option>French</option>
-                      <option>German</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">Region</p>
-                    <select className="px-3 py-1 border rounded">
-                      <option>United States</option>
-                      <option>Canada</option>
-                      <option>United Kingdom</option>
-                      <option>Australia</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === "appearance" && (
-          <div>
-            <h2 className="text-2xl font-semibold mb-6">Appearance</h2>
-
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium mb-3">Theme</h3>
-                <div className="flex space-x-4">
-                  <div className="border-2 border-blue-500 p-1 rounded-lg">
-                    <div className="bg-white w-32 h-24 rounded flex flex-col">
-                      <div className="h-6 bg-gray-200 rounded-t"></div>
-                      <div className="flex-1"></div>
-                    </div>
-                    <p className="text-center mt-2 font-medium">Light</p>
-                  </div>
-
-                  <div className="border-2 border-gray-300 p-1 rounded-lg">
-                    <div className="bg-gray-800 w-32 h-24 rounded flex flex-col">
-                      <div className="h-6 bg-gray-700 rounded-t"></div>
-                      <div className="flex-1"></div>
-                    </div>
-                    <p className="text-center mt-2 font-medium">Dark</p>
-                  </div>
-
-                  <div className="border-2 border-gray-300 p-1 rounded-lg">
-                    <div className="bg-gradient-to-b from-white to-gray-800 w-32 h-24 rounded flex flex-col">
-                      <div className="h-6 bg-gradient-to-b from-gray-200 to-gray-700 rounded-t"></div>
-                      <div className="flex-1"></div>
-                    </div>
-                    <p className="text-center mt-2 font-medium">Auto</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium mb-3">Accent Color</h3>
-                <div className="flex space-x-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-purple-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-pink-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-red-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-orange-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-green-500 border-2 border-gray-300"></div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium mb-3">Highlight Color</h3>
-                <div className="flex space-x-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-yellow-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-green-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-orange-500 border-2 border-gray-300"></div>
-                  <div className="w-8 h-8 rounded-full bg-red-500 border-2 border-gray-300"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection !== "general" && activeSection !== "appearance" && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold mb-2">{sections.find((s) => s.id === activeSection)?.name}</h2>
-              <p className="text-gray-500">This section is under development</p>
-            </div>
-          </div>
-        )}
-      </div>
+      <div className="flex-1 p-6 overflow-y-auto">{renderSection()}</div>
     </div>
   )
 }

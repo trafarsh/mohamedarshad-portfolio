@@ -21,7 +21,7 @@ export default function ShutdownScreen({ onBoot }: ShutdownScreenProps) {
 
   return (
     <div
-      className="h-screen w-screen bg-black flex flex-col items-center justify-center cursor-pointer"
+      className="h-full w-full bg-black flex flex-col items-center justify-center cursor-pointer"
       onClick={onBoot}
     >
       {showBootText ? (

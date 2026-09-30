@@ -1,348 +1,309 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Play, RotateCcw, Pause, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
+import { Play, RotateCcw, Pause, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Trophy } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { readSetting, writeSetting } from "@/components/system-context"
 
 interface SnakeProps {
   isDarkMode?: boolean
+  isActive?: boolean
 }
 
-// Define types for game elements
 type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT"
 type Position = { x: number; y: number }
 
-export default function Snake({ isDarkMode = true }: SnakeProps) {
-  // Game settings
-  const GRID_SIZE = 20
-  const CELL_SIZE = 20
-  const GAME_SPEED = 100
-  const INITIAL_SNAKE = [
-    { x: 10, y: 10 },
-    { x: 10, y: 11 },
-    { x: 10, y: 12 },
-  ]
+interface GameState {
+  snake: Position[]
+  food: Position
+  score: number
+  gameOver: boolean
+}
 
-  // Game state
-  const [snake, setSnake] = useState<Position[]>(INITIAL_SNAKE)
-  const [food, setFood] = useState<Position>({ x: 5, y: 5 })
-  const [direction, setDirection] = useState<Direction>("UP")
-  const [gameOver, setGameOver] = useState(false)
+const GRID_SIZE = 20
+const CELL_SIZE = 20
+const BASE_SPEED = 130
+const MIN_SPEED = 60
+const INITIAL_SNAKE: Position[] = [
+  { x: 10, y: 10 },
+  { x: 10, y: 11 },
+  { x: 10, y: 12 },
+]
+
+const OPPOSITE: Record<Direction, Direction> = { UP: "DOWN", DOWN: "UP", LEFT: "RIGHT", RIGHT: "LEFT" }
+const KEY_TO_DIRECTION: Record<string, Direction> = {
+  ArrowUp: "UP",
+  ArrowDown: "DOWN",
+  ArrowLeft: "LEFT",
+  ArrowRight: "RIGHT",
+  w: "UP",
+  s: "DOWN",
+  a: "LEFT",
+  d: "RIGHT",
+}
+
+// Picks a random empty cell (no recursion, so it can't blow the stack on a long snake)
+function randomFood(snake: Position[]): Position {
+  const free: Position[] = []
+  for (let x = 0; x < GRID_SIZE; x++) {
+    for (let y = 0; y < GRID_SIZE; y++) {
+      if (!snake.some((s) => s.x === x && s.y === y)) free.push({ x, y })
+    }
+  }
+  return free[Math.floor(Math.random() * free.length)] ?? { x: 0, y: 0 }
+}
+
+const newGame = (): GameState => ({ snake: INITIAL_SNAKE, food: { x: 5, y: 5 }, score: 0, gameOver: false })
+
+export default function Snake({ isDarkMode = true, isActive = true }: SnakeProps) {
+  const [game, setGame] = useState<GameState>(newGame)
   const [isPaused, setIsPaused] = useState(true)
-  const [score, setScore] = useState(0)
   const [highScore, setHighScore] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const gameLoopRef = useRef<number | null>(null)
+  // Direction used for the last move, and the direction queued for the next one
+  const currentDirection = useRef<Direction>("UP")
+  const queuedDirection = useRef<Direction>("UP")
+  const swipeStart = useRef<Position | null>(null)
 
-  // Colors based on dark mode
-  const bgColor = isDarkMode ? "#1a1a1a" : "#f0f0f0"
-  const gridColor = isDarkMode ? "#333333" : "#e0e0e0"
-  const snakeColor = isDarkMode ? "#4ade80" : "#22c55e" // Green
-  const foodColor = isDarkMode ? "#f87171" : "#ef4444" // Red
-  const textColor = isDarkMode ? "#ffffff" : "#000000"
+  const speed = Math.max(MIN_SPEED, BASE_SPEED - Math.floor(game.score / 50) * 10)
 
-  // Generate random food position
-  const generateFood = useCallback((): Position => {
-    const newFood = {
-      x: Math.floor(Math.random() * GRID_SIZE),
-      y: Math.floor(Math.random() * GRID_SIZE),
+  useEffect(() => {
+    const saved = Number.parseInt(readSetting("snakeHighScore") ?? "", 10)
+    if (!Number.isNaN(saved)) setHighScore(saved)
+  }, [])
+
+  useEffect(() => {
+    if (game.score > highScore) {
+      setHighScore(game.score)
+      writeSetting("snakeHighScore", game.score.toString())
     }
+  }, [game.score, highScore])
 
-    // Make sure food doesn't spawn on snake
-    if (snake.some((segment) => segment.x === newFood.x && segment.y === newFood.y)) {
-      return generateFood()
-    }
+  // Pause automatically when the window loses focus or is minimized
+  useEffect(() => {
+    if (!isActive) setIsPaused(true)
+  }, [isActive])
 
-    return newFood
-  }, [snake, GRID_SIZE])
-
-  // Draw game on canvas
-  const drawGame = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    // Clear canvas
-    ctx.fillStyle = bgColor
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    // Draw grid
-    ctx.fillStyle = gridColor
-    for (let i = 0; i < GRID_SIZE; i++) {
-      for (let j = 0; j < GRID_SIZE; j++) {
-        if ((i + j) % 2 === 0) {
-          ctx.fillRect(i * CELL_SIZE, j * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        }
+  const changeDirection = useCallback(
+    (direction: Direction) => {
+      if (game.gameOver) return
+      // Compare with the direction actually moved last, so two quick key presses can't reverse the snake into itself
+      if (direction !== OPPOSITE[currentDirection.current]) {
+        queuedDirection.current = direction
       }
-    }
+      setIsPaused(false)
+    },
+    [game.gameOver],
+  )
 
-    // Draw snake
-    ctx.fillStyle = snakeColor
-    snake.forEach((segment) => {
-      ctx.fillRect(segment.x * CELL_SIZE, segment.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-    })
-
-    // Draw food
-    ctx.fillStyle = foodColor
-    ctx.beginPath()
-    const centerX = food.x * CELL_SIZE + CELL_SIZE / 2
-    const centerY = food.y * CELL_SIZE + CELL_SIZE / 2
-    ctx.arc(centerX, centerY, CELL_SIZE / 2, 0, 2 * Math.PI)
-    ctx.fill()
-
-    // Draw score
-    ctx.fillStyle = textColor
-    ctx.font = "16px Arial"
-    ctx.textAlign = "left"
-    ctx.fillText(`Score: ${score}`, 10, canvas.height - 10)
-    ctx.textAlign = "right"
-    ctx.fillText(`High Score: ${highScore}`, canvas.width - 10, canvas.height - 10)
-
-    // Draw game over text
-    if (gameOver) {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)"
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.fillStyle = "#ffffff"
-      ctx.font = "24px Arial"
-      ctx.textAlign = "center"
-      ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2 - 20)
-      ctx.font = "18px Arial"
-      ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 10)
-      ctx.fillText("Press Restart to play again", canvas.width / 2, canvas.height / 2 + 40)
-    }
-  }, [
-    snake,
-    food,
-    gameOver,
-    score,
-    highScore,
-    bgColor,
-    gridColor,
-    snakeColor,
-    foodColor,
-    textColor,
-    CELL_SIZE,
-    GRID_SIZE,
-  ])
+  const resetGame = () => {
+    currentDirection.current = "UP"
+    queuedDirection.current = "UP"
+    setGame({ ...newGame(), food: randomFood(INITIAL_SNAKE) })
+    setIsPaused(true)
+  }
 
   // Game loop
-  const gameLoop = useCallback(() => {
-    if (isPaused || gameOver) return
-
-    // Move snake
-    const head = { ...snake[0] }
-    switch (direction) {
-      case "UP":
-        head.y -= 1
-        break
-      case "DOWN":
-        head.y += 1
-        break
-      case "LEFT":
-        head.x -= 1
-        break
-      case "RIGHT":
-        head.x += 1
-        break
-    }
-
-    // Check for collisions with walls
-    if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
-      setGameOver(true)
-      return
-    }
-
-    // Check for collisions with self
-    if (snake.some((segment) => segment.x === head.x && segment.y === head.y)) {
-      setGameOver(true)
-      return
-    }
-
-    // Check if snake eats food
-    const newSnake = [head, ...snake]
-    if (head.x === food.x && head.y === food.y) {
-      setFood(generateFood())
-      setScore((prevScore) => prevScore + 10)
-      setHighScore((prevHighScore) => Math.max(prevHighScore, score + 10))
-    } else {
-      newSnake.pop() // Remove tail if no food eaten
-    }
-
-    setSnake(newSnake)
-  }, [direction, food, gameOver, generateFood, isPaused, score, snake, GRID_SIZE])
-
-  // Handle keyboard input
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (gameOver) return
+    if (isPaused || game.gameOver) return
 
-      switch (e.key) {
-        case "ArrowUp":
-          if (direction !== "DOWN") setDirection("UP")
-          break
-        case "ArrowDown":
-          if (direction !== "UP") setDirection("DOWN")
-          break
-        case "ArrowLeft":
-          if (direction !== "RIGHT") setDirection("LEFT")
-          break
-        case "ArrowRight":
-          if (direction !== "LEFT") setDirection("RIGHT")
-          break
-        case " ": // Space bar to pause/resume
-          setIsPaused((prev) => !prev)
-          break
+    const interval = setInterval(() => {
+      setGame((prev) => {
+        if (prev.gameOver) return prev
+
+        const direction = queuedDirection.current
+        currentDirection.current = direction
+
+        const head = { ...prev.snake[0] }
+        if (direction === "UP") head.y -= 1
+        if (direction === "DOWN") head.y += 1
+        if (direction === "LEFT") head.x -= 1
+        if (direction === "RIGHT") head.x += 1
+
+        const ateFood = head.x === prev.food.x && head.y === prev.food.y
+        // The tail moves out of the way this tick unless the snake is growing
+        const body = ateFood ? prev.snake : prev.snake.slice(0, -1)
+
+        const hitWall = head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE
+        const hitSelf = body.some((segment) => segment.x === head.x && segment.y === head.y)
+        if (hitWall || hitSelf) return { ...prev, gameOver: true }
+
+        const snake = [head, ...body]
+        return {
+          snake,
+          food: ateFood ? randomFood(snake) : prev.food,
+          score: ateFood ? prev.score + 10 : prev.score,
+          gameOver: false,
+        }
+      })
+    }, speed)
+
+    return () => clearInterval(interval)
+  }, [isPaused, game.gameOver, speed])
+
+  // Keyboard controls — only while this window is focused and the user isn't typing somewhere
+  useEffect(() => {
+    if (!isActive) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest("input, textarea, [contenteditable='true']")) return
+
+      const direction = KEY_TO_DIRECTION[e.key.length === 1 ? e.key.toLowerCase() : e.key]
+      if (direction) {
+        e.preventDefault()
+        changeDirection(direction)
+      } else if (e.key === " ") {
+        e.preventDefault()
+        if (game.gameOver) resetGame()
+        else setIsPaused((prev) => !prev)
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [direction, gameOver])
+  }, [isActive, changeDirection, game.gameOver])
 
-  // Start/stop game loop
+  // Draw the board whenever the game or theme changes
   useEffect(() => {
-    if (!isPaused && !gameOver) {
-      gameLoopRef.current = window.setInterval(gameLoop, GAME_SPEED)
-    } else if (gameLoopRef.current) {
-      clearInterval(gameLoopRef.current)
-      gameLoopRef.current = null
-    }
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext("2d")
+    if (!canvas || !ctx) return
 
-    return () => {
-      if (gameLoopRef.current) {
-        clearInterval(gameLoopRef.current)
+    const bgColor = isDarkMode ? "#1a1a1a" : "#f0f0f0"
+    const gridColor = isDarkMode ? "#242424" : "#e6e6e6"
+
+    ctx.fillStyle = bgColor
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    ctx.fillStyle = gridColor
+    for (let i = 0; i < GRID_SIZE; i++) {
+      for (let j = 0; j < GRID_SIZE; j++) {
+        if ((i + j) % 2 === 0) ctx.fillRect(i * CELL_SIZE, j * CELL_SIZE, CELL_SIZE, CELL_SIZE)
       }
     }
-  }, [isPaused, gameOver, gameLoop, GAME_SPEED])
 
-  // Draw game whenever state changes
-  useEffect(() => {
-    drawGame()
-  }, [snake, food, gameOver, score, drawGame])
+    game.snake.forEach((segment, index) => {
+      ctx.fillStyle = index === 0 ? (isDarkMode ? "#86efac" : "#16a34a") : isDarkMode ? "#4ade80" : "#22c55e"
+      const x = segment.x * CELL_SIZE + 1
+      const y = segment.y * CELL_SIZE + 1
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath()
+        ctx.roundRect(x, y, CELL_SIZE - 2, CELL_SIZE - 2, 5)
+        ctx.fill()
+      } else {
+        ctx.fillRect(x, y, CELL_SIZE - 2, CELL_SIZE - 2)
+      }
+    })
 
-  // Initialize high score from localStorage
-  useEffect(() => {
-    const savedHighScore = localStorage.getItem("snakeHighScore")
-    if (savedHighScore) {
-      setHighScore(Number.parseInt(savedHighScore, 10))
+    ctx.fillStyle = isDarkMode ? "#f87171" : "#ef4444"
+    ctx.beginPath()
+    ctx.arc(game.food.x * CELL_SIZE + CELL_SIZE / 2, game.food.y * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE / 2 - 2, 0, 2 * Math.PI)
+    ctx.fill()
+
+    const overlay = (title: string, subtitle: string) => {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)"
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = "#ffffff"
+      ctx.textAlign = "center"
+      ctx.font = "bold 26px -apple-system, Arial"
+      ctx.fillText(title, canvas.width / 2, canvas.height / 2 - 10)
+      ctx.font = "15px -apple-system, Arial"
+      ctx.fillText(subtitle, canvas.width / 2, canvas.height / 2 + 20)
     }
-  }, [])
 
-  // Save high score to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem("snakeHighScore", highScore.toString())
-  }, [highScore])
+    if (game.gameOver) overlay("Game Over", `Score ${game.score} — press Space or Restart`)
+    else if (isPaused) overlay(game.score === 0 ? "Snake" : "Paused", "Press an arrow key or Play to start")
+  }, [game, isPaused, isDarkMode])
 
-  // Reset game
-  const resetGame = () => {
-    setSnake(INITIAL_SNAKE)
-    setFood(generateFood())
-    setDirection("UP")
-    setGameOver(false)
-    setScore(0)
-    setIsPaused(true)
+  // Swipe controls for touch screens
+  const handlePointerDown = (e: React.PointerEvent) => {
+    swipeStart.current = { x: e.clientX, y: e.clientY }
   }
 
-  // Handle direction button clicks
-  const handleDirectionClick = (newDirection: Direction) => {
-    // Prevent 180-degree turns
-    if (
-      (newDirection === "UP" && direction !== "DOWN") ||
-      (newDirection === "DOWN" && direction !== "UP") ||
-      (newDirection === "LEFT" && direction !== "RIGHT") ||
-      (newDirection === "RIGHT" && direction !== "LEFT")
-    ) {
-      setDirection(newDirection)
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start) return
+
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) {
+      if (!game.gameOver) setIsPaused((prev) => !prev)
+      return
     }
+    if (Math.abs(dx) > Math.abs(dy)) changeDirection(dx > 0 ? "RIGHT" : "LEFT")
+    else changeDirection(dy > 0 ? "DOWN" : "UP")
   }
+
+  const dpadButton = (direction: Direction, Icon: typeof ChevronUp, className: string) => (
+    <Button
+      variant="outline"
+      size="icon"
+      className={`${className} ${isDarkMode ? "border-gray-700 bg-gray-800 hover:bg-gray-700 text-white" : ""}`}
+      onClick={() => changeDirection(direction)}
+      disabled={game.gameOver}
+      aria-label={`Move ${direction.toLowerCase()}`}
+    >
+      <Icon className="w-5 h-5" />
+    </Button>
+  )
 
   return (
-    <div className={`h-full flex flex-col ${isDarkMode ? "bg-gray-900 text-white" : "bg-white text-gray-800"} p-4`}>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Snake Game</h2>
+    <div className={`h-full flex flex-col ${isDarkMode ? "bg-gray-900 text-white" : "bg-white text-gray-800"} p-4 overflow-auto`}>
+      <div className="flex justify-between items-center mb-3 gap-2 flex-wrap">
+        <div className="flex items-center gap-4 text-sm">
+          <span className="font-semibold">Score: {game.score}</span>
+          <span className="flex items-center gap-1 text-yellow-500">
+            <Trophy className="w-4 h-4" /> {highScore}
+          </span>
+        </div>
         <div className="flex space-x-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setIsPaused(!isPaused)}
-            disabled={gameOver}
-            className={isDarkMode ? "border-gray-700" : ""}
+            disabled={game.gameOver}
+            className={isDarkMode ? "border-gray-700 bg-gray-800 hover:bg-gray-700 text-white" : ""}
           >
             {isPaused ? <Play className="w-4 h-4 mr-1" /> : <Pause className="w-4 h-4 mr-1" />}
             {isPaused ? "Play" : "Pause"}
           </Button>
-          <Button variant="outline" size="sm" onClick={resetGame} className={isDarkMode ? "border-gray-700" : ""}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={resetGame}
+            className={isDarkMode ? "border-gray-700 bg-gray-800 hover:bg-gray-700 text-white" : ""}
+          >
             <RotateCcw className="w-4 h-4 mr-1" />
             Restart
           </Button>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center">
+      <div className="flex-1 flex items-center justify-center min-h-0">
         <canvas
           ref={canvasRef}
           width={GRID_SIZE * CELL_SIZE}
           height={GRID_SIZE * CELL_SIZE}
-          className="border border-gray-600 rounded-md shadow-lg"
+          className="w-full max-w-[400px] h-auto aspect-square border border-gray-600 rounded-md shadow-lg touch-none"
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          aria-label="Snake game board"
         />
       </div>
 
-      {/* Mobile controls */}
-      <div className="mt-4 grid grid-cols-3 gap-2 max-w-[200px] mx-auto">
-        <div className="col-start-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full aspect-square"
-            onClick={() => handleDirectionClick("UP")}
-            disabled={gameOver}
-          >
-            <ChevronUp className="w-5 h-5" />
-          </Button>
-        </div>
-        <div className="col-start-1 row-start-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full aspect-square"
-            onClick={() => handleDirectionClick("LEFT")}
-            disabled={gameOver}
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </Button>
-        </div>
-        <div className="col-start-3 row-start-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full aspect-square"
-            onClick={() => handleDirectionClick("RIGHT")}
-            disabled={gameOver}
-          >
-            <ChevronRight className="w-5 h-5" />
-          </Button>
-        </div>
-        <div className="col-start-2 row-start-2">
-          <div className="w-full aspect-square"></div>
-        </div>
-        <div className="col-start-2 row-start-3">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full aspect-square"
-            onClick={() => handleDirectionClick("DOWN")}
-            disabled={gameOver}
-          >
-            <ChevronDown className="w-5 h-5" />
-          </Button>
-        </div>
+      {/* On-screen controls */}
+      <div className="mt-3 grid grid-cols-3 gap-1.5 w-[132px] mx-auto">
+        {dpadButton("UP", ChevronUp, "col-start-2")}
+        {dpadButton("LEFT", ChevronLeft, "col-start-1 row-start-2")}
+        {dpadButton("DOWN", ChevronDown, "col-start-2 row-start-2")}
+        {dpadButton("RIGHT", ChevronRight, "col-start-3 row-start-2")}
       </div>
 
-      <div className="mt-4 text-center text-sm">
-        <p>Use arrow keys to move, space to pause/resume</p>
-      </div>
+      <p className="mt-3 text-center text-xs text-gray-500">Arrow keys / WASD to move · Space to pause · Swipe on touch screens</p>
     </div>
   )
 }
