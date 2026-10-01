@@ -26,7 +26,7 @@
 1. **Create `.env.local` file** in your project root:
 
 ```bash
-# In: c:\Users\amsir\Desktop\Portfolio\.env.local
+# .env.local (in the project root)
 
 GMAIL_USER=mohamedarshad1507@gmail.com
 GMAIL_APP_PASSWORD=your_16_character_app_password_here
@@ -47,7 +47,12 @@ GMAIL_APP_PASSWORD=abcdefghijklmnop
 npm run dev
 ```
 
-### Step 4: Test!
+### Step 4: Add the Same Variables on Vercel
+
+For the live site, add `GMAIL_USER` and `GMAIL_APP_PASSWORD` in your Vercel project under
+**Settings → Environment Variables**, then redeploy.
+
+### Step 5: Test!
 
 1. Open http://localhost:3000
 2. Click Mail app
@@ -70,7 +75,6 @@ npm run dev
 - **Subject:** "Thank you for contacting Mohamed Arshad"
 - **Content:**
   - Thank you message
-  - Copy of their message
   - Your contact details
   - Expected response time (24-48 hours)
 
@@ -92,10 +96,16 @@ Both emails use beautiful HTML templates with:
 - ✅ Environment variables (not in code)
 - ✅ `.env.local` is gitignored (won't be committed)
 - ✅ Can revoke app password anytime
+- ✅ All user input is HTML-escaped before it goes into an email
+- ✅ The auto-reply never echoes the visitor's message, so the form can't be used to send spam to other people
+- ✅ Input validation, length limits, a hidden honeypot field and basic rate limiting (5 messages / 10 min per IP)
 
 ---
 
 ## 🚨 Troubleshooting
+
+### "The contact form is temporarily unavailable"
+- `GMAIL_USER` / `GMAIL_APP_PASSWORD` are missing — check `.env.local` (or the Vercel environment variables)
 
 ### "Failed to send email"
 - Check if `.env.local` file exists
@@ -134,9 +144,12 @@ This prevents your Gmail password from being committed to Git!
 After setup, test if it works:
 
 ```bash
-# The contact form will show any errors in the browser console
-# Check browser DevTools → Console for detailed error messages
+curl -X POST http://localhost:3000/api/send-email \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test","email":"you@example.com","subject":"Hello","message":"Testing the form"}'
 ```
+
+Server-side errors are logged in the terminal running `npm run dev` (or in Vercel's function logs).
 
 ---
 

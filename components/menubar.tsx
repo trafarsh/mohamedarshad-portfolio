@@ -5,180 +5,238 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Search } from "lucide-react"
 import { AppleIcon } from "@/components/icons"
+import { useSystem } from "@/components/system-context"
+import { profile } from "@/lib/profile"
+import type { AppWindow } from "@/types"
+
+interface BatteryManagerLike extends EventTarget {
+  level: number
+  charging: boolean
+}
 
 interface MenubarProps {
-  time: Date
   onLogout: () => void
   onSleep: () => void
   onShutdown: () => void
   onRestart: () => void
   onSpotlightClick: () => void
   onControlCenterClick: () => void
-  isDarkMode: boolean
-  activeWindow: { id: string; title: string } | null
+  onOpenApp: (id: string) => void
+  onCloseWindow: (id: string) => void
+  onMinimizeWindow: (id: string) => void
+  activeWindow: AppWindow | null
 }
 
+type MenuItem = { label: string; onClick?: () => void; disabled?: boolean } | "separator"
+
 export default function Menubar({
-  time,
   onLogout,
   onSleep,
   onShutdown,
   onRestart,
   onSpotlightClick,
   onControlCenterClick,
-  isDarkMode,
+  onOpenApp,
+  onCloseWindow,
+  onMinimizeWindow,
   activeWindow,
 }: MenubarProps) {
+  const { isDarkMode, wifiEnabled, setWifiEnabled } = useSystem()
+  const [time, setTime] = useState<Date | null>(null)
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const [batteryLevel, setBatteryLevel] = useState(100)
   const [isCharging, setIsCharging] = useState(false)
   const [showWifiToggle, setShowWifiToggle] = useState(false)
-  const [wifiEnabled, setWifiEnabled] = useState(true)
   const menuRef = useRef<HTMLDivElement>(null)
-  const wifiRef = useRef<HTMLDivElement>(null)
 
-  const formattedTime = time.toLocaleString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
-
+  // The clock lives here (instead of the desktop) so ticking doesn't re-render every open window
   useEffect(() => {
-    // Try to get battery information if available
-    if ("getBattery" in navigator) {
-      // @ts-ignore - getBattery is not in the standard navigator type
-      navigator
-        .getBattery()
-        .then((battery: any) => {
-          updateBatteryStatus(battery)
+    setTime(new Date())
+    const timer = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-          // Listen for battery status changes
-          battery.addEventListener("levelchange", () => updateBatteryStatus(battery))
-          battery.addEventListener("chargingchange", () => updateBatteryStatus(battery))
-        })
-        .catch(() => {
-          // If there's an error, default to 100%
-          setBatteryLevel(100)
-          setIsCharging(false)
-        })
+  // Show the real battery status where the browser exposes it
+  useEffect(() => {
+    let battery: BatteryManagerLike | null = null
+    const update = () => {
+      if (!battery) return
+      setBatteryLevel(Math.round(battery.level * 100))
+      setIsCharging(battery.charging)
     }
 
-    // Load WiFi state from localStorage
-    const savedWifi = localStorage.getItem("wifiEnabled")
-    if (savedWifi !== null) {
-      setWifiEnabled(savedWifi === "true")
-    }
+    const nav = navigator as Navigator & { getBattery?: () => Promise<BatteryManagerLike> }
+    nav
+      .getBattery?.()
+      .then((result) => {
+        battery = result
+        update()
+        battery.addEventListener("levelchange", update)
+        battery.addEventListener("chargingchange", update)
+      })
+      .catch(() => {})
 
-    const handleClickOutside = (event: MouseEvent) => {
+    return () => {
+      battery?.removeEventListener("levelchange", update)
+      battery?.removeEventListener("chargingchange", update)
+    }
+  }, [])
+
+  // Close menus when clicking elsewhere or pressing Escape
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setActiveMenu(null)
+        setShowWifiToggle(false)
       }
-
-      if (
-        wifiRef.current &&
-        !wifiRef.current.contains(event.target as Node) &&
-        !(event.target as Element).closest(".wifi-icon")
-      ) {
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActiveMenu(null)
         setShowWifiToggle(false)
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
     }
   }, [])
 
-  const updateBatteryStatus = (battery: any) => {
-    setBatteryLevel(Math.round(battery.level * 100))
-    setIsCharging(battery.charging)
-  }
-
   const toggleMenu = (menuName: string) => {
-    if (activeMenu === menuName) {
-      setActiveMenu(null)
-    } else {
-      setActiveMenu(menuName)
-    }
+    setShowWifiToggle(false)
+    setActiveMenu((current) => (current === menuName ? null : menuName))
   }
 
-  const toggleWifi = () => {
-    const newState = !wifiEnabled
-    setWifiEnabled(newState)
-    localStorage.setItem("wifiEnabled", newState.toString())
+  const runAndClose = (action?: () => void) => () => {
+    setActiveMenu(null)
+    action?.()
   }
 
-  const toggleWifiPopup = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setShowWifiToggle(!showWifiToggle)
-  }
+  const appleMenu: MenuItem[] = [
+    { label: "About This Mac", onClick: () => onOpenApp("about") },
+    "separator",
+    { label: "System Settings...", onClick: () => onOpenApp("settings") },
+    "separator",
+    { label: "Sleep", onClick: onSleep },
+    { label: "Restart...", onClick: onRestart },
+    { label: "Shut Down...", onClick: onShutdown },
+    "separator",
+    { label: "Lock Screen", onClick: onLogout },
+    { label: `Log Out ${profile.firstName}...`, onClick: onLogout },
+  ]
 
-  const menuBgClass = isDarkMode ? "bg-black/40 backdrop-blur-md" : "bg-white/20 backdrop-blur-md"
-  const dropdownBgClass = isDarkMode ? "bg-gray-800/90 backdrop-blur-md" : "bg-gray-200/90 backdrop-blur-md"
-  const textClass = isDarkMode ? "text-white" : "text-gray-800"
-  const hoverClass = isDarkMode ? "hover:bg-blue-600" : "hover:bg-blue-400"
+  const appName = activeWindow?.title ?? "Finder"
+  const appMenu: MenuItem[] = activeWindow
+    ? [
+        { label: "Minimize", onClick: () => onMinimizeWindow(activeWindow.id) },
+        { label: "Close Window", onClick: () => onCloseWindow(activeWindow.id) },
+        "separator",
+        { label: `Quit ${activeWindow.title}`, onClick: () => onCloseWindow(activeWindow.id) },
+      ]
+    : [
+        { label: "About Me", onClick: () => onOpenApp("notes") },
+        { label: "Projects", onClick: () => onOpenApp("safari") },
+        { label: "Contact", onClick: () => onOpenApp("mail") },
+        "separator",
+        { label: "Search...", onClick: onSpotlightClick },
+      ]
+
+  const menuBgClass = isDarkMode ? "bg-black/40" : "bg-white/30"
+  const dropdownBgClass = isDarkMode
+    ? "bg-gray-800/90 border-white/10 text-white"
+    : "bg-gray-100/90 border-black/10 text-gray-900"
+  const textClass = isDarkMode ? "text-white" : "text-gray-900"
+  const separatorClass = isDarkMode ? "border-white/15" : "border-black/10"
+
+  const renderDropdown = (items: MenuItem[], className: string) => (
+    <div
+      role="menu"
+      className={`absolute top-6 ${className} ${dropdownBgClass} backdrop-blur-xl border rounded-lg shadow-xl p-1 w-56 animate-in fade-in duration-100`}
+    >
+      {items.map((item, index) =>
+        item === "separator" ? (
+          <div key={`sep-${index}`} className={`border-t ${separatorClass} my-1 mx-2`} />
+        ) : (
+          <button
+            key={item.label}
+            role="menuitem"
+            disabled={item.disabled}
+            className="w-full text-left px-3 py-0.5 rounded hover:bg-blue-500 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent"
+            onClick={runAndClose(item.onClick)}
+          >
+            {item.label}
+          </button>
+        ),
+      )}
+    </div>
+  )
+
+  const topButtonClass = (name: string) =>
+    `px-2 py-0.5 rounded ${activeMenu === name ? (isDarkMode ? "bg-white/20" : "bg-black/10") : ""}`
+
+  const formattedDate =
+    time?.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric" }).replace(",", "") ?? ""
+  const formattedTime = time?.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) ?? ""
 
   return (
-    <div
+    <header
       ref={menuRef}
-      className={`fixed top-0 left-0 right-0 h-6 ${menuBgClass} z-50 flex items-center px-4 ${textClass} text-sm`}
+      className={`fixed top-0 left-0 right-0 h-6 ${menuBgClass} backdrop-blur-xl z-50 flex items-center px-2 sm:px-3 ${textClass} text-[13px] select-none`}
     >
-      <div className="flex-1 flex items-center">
-        <button
-          className="flex items-center mr-4 hover:bg-white/10 px-2 py-0.5 rounded"
-          onClick={() => toggleMenu("apple")}
-        >
-          <AppleIcon className="w-4 h-4" />
-        </button>
-
-        {activeMenu === "apple" && (
-          <div className={`absolute top-6 left-2 ${dropdownBgClass} rounded-lg shadow-xl ${textClass} py-1 w-56`}>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`}>About This Mac</button>
-            <div className="border-t border-gray-700 my-1"></div>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`}>System Settings...</button>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`}>App Store...</button>
-            <div className="border-t border-gray-700 my-1"></div>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`} onClick={onSleep}>
-              Sleep
-            </button>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`} onClick={onRestart}>
-              Restart...
-            </button>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`} onClick={onShutdown}>
-              Shut Down...
-            </button>
-            <div className="border-t border-gray-700 my-1"></div>
-            <button className={`w-full text-left px-4 py-1 ${hoverClass}`} onClick={onLogout}>
-              Log Out Daniel...
-            </button>
-          </div>
-        )}
-
-        {activeWindow && (
-          <button
-            className={`mr-4 font-medium hover:bg-white/10 px-2 py-0.5 rounded ${activeMenu === "app" ? "bg-white/10" : ""}`}
-            onClick={() => toggleMenu("app")}
-          >
-            {activeWindow.title}
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center space-x-3">
-        <span className="mr-1">{batteryLevel}%</span>
+      <nav className="flex-1 flex items-center min-w-0">
         <div className="relative">
-          <div className="w-6 h-3 border border-current rounded-sm relative">
-            <div className="absolute top-0 left-0 bottom-0 bg-current" style={{ width: `${batteryLevel}%` }}></div>
-            <div className="absolute -right-1 top-1/2 transform -translate-y-1/2 w-1 h-2 bg-current rounded-r-sm"></div>
-            {isCharging && <div className="absolute inset-0 flex items-center justify-center text-xs">⚡</div>}
+          <button
+            className={topButtonClass("apple")}
+            onClick={() => toggleMenu("apple")}
+            onMouseEnter={() => activeMenu && activeMenu !== "apple" && setActiveMenu("apple")}
+            aria-label="Apple menu"
+            aria-haspopup="menu"
+            aria-expanded={activeMenu === "apple"}
+          >
+            <AppleIcon className="w-3.5 h-3.5" />
+          </button>
+          {activeMenu === "apple" && renderDropdown(appleMenu, "left-0")}
+        </div>
+
+        <div className="relative min-w-0">
+          <button
+            className={`${topButtonClass("app")} font-semibold truncate max-w-[40vw]`}
+            onClick={() => toggleMenu("app")}
+            onMouseEnter={() => activeMenu && activeMenu !== "app" && setActiveMenu("app")}
+            aria-haspopup="menu"
+            aria-expanded={activeMenu === "app"}
+          >
+            {appName}
+          </button>
+          {activeMenu === "app" && renderDropdown(appMenu, "left-0")}
+        </div>
+      </nav>
+
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <div className="hidden sm:flex items-center gap-1.5" title={`Battery ${batteryLevel}%${isCharging ? " (charging)" : ""}`}>
+          <span className="text-xs">{batteryLevel}%</span>
+          <div className="w-6 h-3 border border-current rounded-sm relative p-px">
+            <div className="h-full bg-current rounded-[1px]" style={{ width: `${batteryLevel}%` }} />
+            <div className="absolute -right-[3px] top-1/2 -translate-y-1/2 w-[2px] h-1.5 bg-current rounded-r-sm" />
+            {isCharging && (
+              <div className="absolute inset-0 flex items-center justify-center text-[8px] leading-none">⚡</div>
+            )}
           </div>
         </div>
 
         <div className="relative">
-          <button className="wifi-icon" onClick={toggleWifiPopup}>
+          <button
+            onClick={() => {
+              setActiveMenu(null)
+              setShowWifiToggle((value) => !value)
+            }}
+            aria-label={`Wi-Fi ${wifiEnabled ? "on" : "off"}`}
+            aria-expanded={showWifiToggle}
+            className="flex items-center"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
@@ -187,7 +245,7 @@ export default function Menubar({
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="w-5 h-5"
+              className="w-4 h-4"
             >
               {wifiEnabled ? (
                 <>
@@ -212,38 +270,45 @@ export default function Menubar({
 
           {showWifiToggle && (
             <div
-              ref={wifiRef}
-              className={`absolute top-6 right-0 ${dropdownBgClass} rounded-lg shadow-xl ${textClass} py-3 px-4 w-64`}
+              className={`absolute top-6 -right-16 sm:right-0 ${dropdownBgClass} backdrop-blur-xl border rounded-lg shadow-xl py-3 px-4 w-64 animate-in fade-in duration-100`}
             >
-              <div className="flex items-center justify-between">
+              <label className="flex items-center justify-between cursor-pointer">
                 <span className="font-medium">Wi-Fi</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={wifiEnabled} onChange={toggleWifi} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-500 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                </label>
-              </div>
+                <span className="relative inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={wifiEnabled}
+                    onChange={() => setWifiEnabled(!wifiEnabled)}
+                    className="sr-only peer"
+                  />
+                  <span className="w-11 h-6 bg-gray-500 rounded-full peer-checked:bg-blue-500 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:after:translate-x-5" />
+                </span>
+              </label>
+              <p className="text-xs opacity-60 mt-2">
+                {wifiEnabled ? "Connected to Portfolio-5G" : "Wi-Fi is off. Safari will show as offline."}
+              </p>
             </div>
           )}
         </div>
 
-        <button onClick={onSpotlightClick}>
-          <Search className="w-4 h-4" />
+        <button onClick={onSpotlightClick} aria-label="Spotlight search" title="Spotlight (Ctrl+K)">
+          <Search className="w-3.5 h-3.5" />
         </button>
 
-        <button onClick={onControlCenterClick} className="flex items-center justify-center">
+        <button onClick={onControlCenterClick} className="flex items-center justify-center" aria-label="Control Center">
           <img
             src="/control-center-icon.webp"
-            alt="Control Center"
+            alt=""
             className="w-4 h-4"
-            style={{
-              filter: isDarkMode ? "invert(1)" : "none",
-              opacity: 0.9,
-            }}
+            style={{ filter: isDarkMode ? "invert(1)" : "none", opacity: 0.9 }}
           />
         </button>
 
-        <span>{formattedTime}</span>
+        <span className="tabular-nums whitespace-nowrap">
+          <span className="hidden sm:inline">{formattedDate} </span>
+          {formattedTime}
+        </span>
       </div>
-    </div>
+    </header>
   )
 }

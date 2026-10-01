@@ -33,13 +33,13 @@ Edit `data/projects.ts` and add new projects:
 
 ```typescript
 {
-  id: 3,
+  id: 4,
   title: "Your Project Name",
   description: "Project description here",
   technologies: ["React", "Node.js", "etc"],
   liveUrl: "https://your-project.vercel.app/",
   githubUrl: "https://github.com/mohamedarshad-code/your-project",
-  image: "/your-project.png",
+  image: "/your-project.png", // optional
   featured: true,
   category: "Web App",
 }
@@ -49,17 +49,18 @@ Edit `data/projects.ts` and add new projects:
 
 1. Take a screenshot of your project
 2. Save it in `public` folder as `project-name.png`
-3. Update the `image` field in `data/projects.ts`
+3. Set the `image` field in `data/projects.ts` (leave it out to get a generated gradient cover)
 
 ---
 
 ## Where Projects Are Displayed
 
-Your projects will be shown in:
+Everything reads from `data/projects.ts`, so you only need to edit one file:
 
-- **Safari app** - Featured projects section
-- **Finder app** - Projects folder
-- **Desktop icons** - Quick access to live demos
+- **Safari app** - Project cards with live demo and code links
+- **Spotlight** (Ctrl/⌘ + K) - Search projects by name or technology
+- **Terminal** - `projects` command
+- **Notes app** - "About Me" note
 
 ---
 

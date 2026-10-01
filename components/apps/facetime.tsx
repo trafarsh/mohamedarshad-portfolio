@@ -1,83 +1,76 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ImageIcon, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Camera, Download, Trash2, VideoOff } from "lucide-react"
 
 interface FaceTimeProps {
   isDarkMode?: boolean
 }
 
+type CameraState = "starting" | "ready" | "unavailable"
+
 export default function FaceTime({ isDarkMode = true }: FaceTimeProps) {
-  const [isCameraAvailable, setIsCameraAvailable] = useState(false)
+  const [cameraState, setCameraState] = useState<CameraState>("starting")
   const [capturedPhotos, setCapturedPhotos] = useState<string[]>([])
+  const [flash, setFlash] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
 
   const bgColor = isDarkMode ? "bg-gray-900" : "bg-white"
   const textColor = isDarkMode ? "text-white" : "text-gray-800"
-  const buttonBg = isDarkMode ? "bg-gray-800 hover:bg-gray-700" : "bg-gray-100 hover:bg-gray-200"
 
-  // Start camera when component mounts
+  // Start the camera when the app opens and always release it when the window closes
   useEffect(() => {
-    startCamera()
+    let stream: MediaStream | null = null
+    let cancelled = false
 
-    // Clean up function to ensure camera is turned off when component unmounts
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState("unavailable")
+      return
+    }
+
+    navigator.mediaDevices
+      .getUserMedia({ video: true })
+      .then((mediaStream) => {
+        // The window may have been closed while the permission prompt was showing
+        if (cancelled) {
+          mediaStream.getTracks().forEach((track) => track.stop())
+          return
+        }
+        stream = mediaStream
+        if (videoRef.current) videoRef.current.srcObject = mediaStream
+        setCameraState("ready")
+      })
+      .catch((err) => {
+        console.error("Error accessing camera:", err)
+        if (!cancelled) setCameraState("unavailable")
+      })
+
     return () => {
-      stopCamera()
+      cancelled = true
+      stream?.getTracks().forEach((track) => track.stop())
     }
   }, [])
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
-
-      // Store stream reference for cleanup
-      streamRef.current = stream
-      setIsCameraAvailable(true)
-    } catch (err) {
-      console.error("Error accessing camera:", err)
-      setIsCameraAvailable(false)
-    }
-  }
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        track.stop()
-      })
-      streamRef.current = null
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null
-    }
-  }
-
   const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current
-      const canvas = canvasRef.current
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || !video.videoWidth) return
 
-      // Set canvas dimensions to match video
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
 
-      // Draw current video frame to canvas
-      const ctx = canvas.getContext("2d")
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
 
-        // Convert canvas to data URL and save to state
-        const photoUrl = canvas.toDataURL("image/png")
-        setCapturedPhotos((prev) => [...prev, photoUrl])
-      }
-    }
+    // Mirror the photo so it matches the selfie preview
+    ctx.translate(canvas.width, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+    setCapturedPhotos((prev) => [canvas.toDataURL("image/png"), ...prev])
+    setFlash(true)
+    setTimeout(() => setFlash(false), 150)
   }
 
   const deletePhoto = (index: number) => {
@@ -86,27 +79,48 @@ export default function FaceTime({ isDarkMode = true }: FaceTimeProps) {
 
   return (
     <div className={`h-full flex flex-col ${bgColor} ${textColor}`}>
-      <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
-        {isCameraAvailable ? (
-          <video ref={videoRef} autoPlay playsInline className="w-full max-w-2xl h-auto rounded-xl bg-black" />
-        ) : (
-          <div className="w-full max-w-2xl aspect-video rounded-xl bg-black flex items-center justify-center">
-            <p className="text-white text-center p-4">
-              Camera access is not available. Please check your browser permissions.
-            </p>
-          </div>
-        )}
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 relative">
+        <div className="relative w-full max-w-2xl aspect-video rounded-xl bg-black overflow-hidden">
+          {/* The video element is always mounted so the stream can be attached as soon as it's ready */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-cover -scale-x-100 ${cameraState === "ready" ? "" : "invisible"}`}
+          />
+
+          {cameraState !== "ready" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-4">
+              {cameraState === "starting" ? (
+                <>
+                  <div className="w-8 h-8 border-2 border-white/70 border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-sm text-white/80">Starting camera… allow access when your browser asks.</p>
+                </>
+              ) : (
+                <>
+                  <VideoOff className="w-10 h-10 mb-3 text-white/70" />
+                  <p>Camera access is not available.</p>
+                  <p className="text-sm text-white/60 mt-1">Check your browser permissions and reopen FaceTime.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {flash && <div className="absolute inset-0 bg-white/80" />}
+        </div>
 
         {/* Hidden canvas for capturing photos */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Capture button */}
-        {isCameraAvailable && (
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
-            <Button className={`w-16 h-16 rounded-full bg-white hover:bg-gray-200 text-black`} onClick={capturePhoto}>
-              <ImageIcon className="w-8 h-8" />
-            </Button>
-          </div>
+        {cameraState === "ready" && (
+          <button
+            className="mt-4 w-14 h-14 rounded-full bg-white hover:bg-gray-200 text-black flex items-center justify-center shadow-lg ring-4 ring-white/30 active:scale-95 transition-transform"
+            onClick={capturePhoto}
+            aria-label="Take photo"
+          >
+            <Camera className="w-7 h-7" />
+          </button>
         )}
       </div>
 
@@ -116,18 +130,25 @@ export default function FaceTime({ isDarkMode = true }: FaceTimeProps) {
           <h3 className="text-sm font-medium mb-2">Captured Photos</h3>
           <div className="flex overflow-x-auto space-x-3 pb-2">
             {capturedPhotos.map((photo, index) => (
-              <div key={index} className="relative group">
-                <img
-                  src={photo || "/placeholder.svg"}
-                  alt={`Captured photo ${index + 1}`}
-                  className="h-24 w-auto rounded"
-                />
-                <button
-                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => deletePhoto(index)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+              <div key={photo.slice(-32) + index} className="relative group shrink-0">
+                <img src={photo} alt={`Captured photo ${index + 1}`} className="h-24 w-auto rounded" />
+                <div className="absolute top-1 right-1 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  <a
+                    href={photo}
+                    download={`facetime-photo-${index + 1}.png`}
+                    className="bg-blue-500 text-white rounded-full p-1"
+                    aria-label="Download photo"
+                  >
+                    <Download className="w-3 h-3" />
+                  </a>
+                  <button
+                    className="bg-red-500 text-white rounded-full p-1"
+                    onClick={() => deletePhoto(index)}
+                    aria-label="Delete photo"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -1,8 +1,6 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import Dock from "@/components/dock"
 import Menubar from "@/components/menubar"
 import Wallpaper from "@/components/wallpaper"
@@ -10,6 +8,9 @@ import Window from "@/components/window"
 import Launchpad from "@/components/launchpad"
 import ControlCenter from "@/components/control-center"
 import Spotlight from "@/components/spotlight"
+import DesktopIcons from "@/components/desktop-icons"
+import { SystemProvider, readSetting, writeSetting, type SystemState } from "@/components/system-context"
+import { createAppWindow, getApp } from "@/lib/apps"
 import type { AppWindow } from "@/types"
 
 interface DesktopProps {
@@ -17,185 +18,185 @@ interface DesktopProps {
   onSleep: () => void
   onShutdown: () => void
   onRestart: () => void
-  initialDarkMode: boolean
-  onToggleDarkMode: () => void
-  initialBrightness: number
+  isDarkMode: boolean
+  onDarkModeChange: (value: boolean) => void
+  brightness: number
   onBrightnessChange: (value: number) => void
 }
+
+type Overlay = "launchpad" | "spotlight" | "controlCenter" | null
 
 export default function Desktop({
   onLogout,
   onSleep,
   onShutdown,
   onRestart,
-  initialDarkMode,
-  onToggleDarkMode,
-  initialBrightness,
+  isDarkMode,
+  onDarkModeChange,
+  brightness,
   onBrightnessChange,
 }: DesktopProps) {
-  const [time, setTime] = useState(new Date())
   const [openWindows, setOpenWindows] = useState<AppWindow[]>([])
+  // Window ids from bottom to top — the last one is drawn on top
+  const [zOrder, setZOrder] = useState<string[]>([])
+  const [minimizedIds, setMinimizedIds] = useState<string[]>([])
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null)
-  const [showLaunchpad, setShowLaunchpad] = useState(false)
-  const [showControlCenter, setShowControlCenter] = useState(false)
-  const [showSpotlight, setShowSpotlight] = useState(false)
-  const [isDarkMode, setIsDarkMode] = useState(initialDarkMode)
-  const [screenBrightness, setScreenBrightness] = useState(initialBrightness)
-  const desktopRef = useRef<HTMLDivElement>(null)
+  const [overlay, setOverlay] = useState<Overlay>(null)
+  const [wifiEnabled, setWifiEnabledState] = useState(true)
+  const [volume, setVolumeState] = useState(75)
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTime(new Date())
-    }, 1000)
+    const savedWifi = readSetting("wifiEnabled")
+    if (savedWifi !== null) setWifiEnabledState(savedWifi === "true")
 
-    // No default app opening to avoid duplicate key issues
-
-    return () => clearInterval(timer)
+    const savedVolume = Number.parseInt(readSetting("volume") ?? "", 10)
+    if (!Number.isNaN(savedVolume)) setVolumeState(Math.min(100, Math.max(0, savedVolume)))
   }, [])
 
-  // Update local state when props change
-  useEffect(() => {
-    setIsDarkMode(initialDarkMode)
-  }, [initialDarkMode])
+  const setWifiEnabled = useCallback((value: boolean) => {
+    setWifiEnabledState(value)
+    writeSetting("wifiEnabled", value.toString())
+  }, [])
 
-  useEffect(() => {
-    setScreenBrightness(initialBrightness)
-  }, [initialBrightness])
+  const setVolume = useCallback((value: number) => {
+    setVolumeState(value)
+    writeSetting("volume", value.toString())
+  }, [])
 
-  const openApp = (app: AppWindow) => {
-    // Check if app is already open
-    const isOpen = openWindows.some((window) => window.id === app.id)
+  const focusWindow = useCallback((id: string) => {
+    setActiveWindowId(id)
+    setZOrder((order) => (order[order.length - 1] === id ? order : [...order.filter((w) => w !== id), id]))
+  }, [])
 
-    if (!isOpen) {
-      setOpenWindows((prev) => [...prev, app])
-    }
+  // Picks the top-most visible window after one is closed or minimized
+  const activateTopWindow = useCallback((order: string[], hidden: string[]) => {
+    const next = [...order].reverse().find((id) => !hidden.includes(id))
+    setActiveWindowId(next ?? null)
+  }, [])
 
-    // Set as active window
-    setActiveWindowId(app.id)
+  const openApp = useCallback(
+    (id: string) => {
+      const app = getApp(id)
+      if (!app) return
 
-    // Close launchpad if open
-    if (showLaunchpad) {
-      setShowLaunchpad(false)
-    }
-  }
+      setOverlay(null)
+      setOpenWindows((windows) =>
+        windows.some((w) => w.id === id) ? windows : [...windows, createAppWindow(app, windows.length)],
+      )
+      setMinimizedIds((ids) => ids.filter((w) => w !== id))
+      focusWindow(id)
+    },
+    [focusWindow],
+  )
 
   const closeWindow = (id: string) => {
-    setOpenWindows((prev) => prev.filter((window) => window.id !== id))
+    const remainingOrder = zOrder.filter((w) => w !== id)
+    const remainingMinimized = minimizedIds.filter((w) => w !== id)
+    setOpenWindows((windows) => windows.filter((w) => w.id !== id))
+    setZOrder(remainingOrder)
+    setMinimizedIds(remainingMinimized)
+    if (activeWindowId === id) activateTopWindow(remainingOrder, remainingMinimized)
+  }
 
-    // If we closed the active window, set the last window as active
-    if (activeWindowId === id && openWindows.length > 1) {
-      const remainingWindows = openWindows.filter((window) => window.id !== id)
-      setActiveWindowId(remainingWindows[remainingWindows.length - 1].id)
-    } else if (openWindows.length <= 1) {
-      setActiveWindowId(null)
+  const minimizeWindow = (id: string) => {
+    const hidden = [...minimizedIds, id]
+    setMinimizedIds(hidden)
+    if (activeWindowId === id) activateTopWindow(zOrder, hidden)
+  }
+
+  const toggleOverlay = (name: Exclude<Overlay, null>) => setOverlay((current) => (current === name ? null : name))
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isSpotlightShortcut =
+        ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.ctrlKey && e.code === "Space")
+
+      if (isSpotlightShortcut) {
+        e.preventDefault()
+        setOverlay((current) => (current === "spotlight" ? null : "spotlight"))
+      } else if (e.key === "Escape") {
+        setOverlay(null)
+      }
     }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
+  const handleBackgroundClick = () => {
+    setActiveWindowId(null)
+    setOverlay(null)
   }
 
-  const setActiveWindow = (id: string) => {
-    setActiveWindowId(id)
-  }
+  const system = useMemo<SystemState>(
+    () => ({
+      isDarkMode,
+      toggleDarkMode: () => onDarkModeChange(!isDarkMode),
+      setDarkMode: onDarkModeChange,
+      brightness,
+      setBrightness: onBrightnessChange,
+      wifiEnabled,
+      setWifiEnabled,
+      volume,
+      setVolume,
+      openApp,
+    }),
+    [isDarkMode, onDarkModeChange, brightness, onBrightnessChange, wifiEnabled, setWifiEnabled, volume, setVolume, openApp],
+  )
 
-  const toggleLaunchpad = () => {
-    setShowLaunchpad(!showLaunchpad)
-    if (showControlCenter) setShowControlCenter(false)
-    if (showSpotlight) setShowSpotlight(false)
-  }
-
-  const toggleControlCenter = () => {
-    setShowControlCenter(!showControlCenter)
-    if (showSpotlight) setShowSpotlight(false)
-  }
-
-  const toggleSpotlight = () => {
-    setShowSpotlight(!showSpotlight)
-    if (showControlCenter) setShowControlCenter(false)
-  }
-
-  const toggleDarkMode = () => {
-    const newMode = !isDarkMode
-    setIsDarkMode(newMode)
-    onToggleDarkMode()
-  }
-
-  const updateBrightness = (value: number) => {
-    setScreenBrightness(value)
-    onBrightnessChange(value)
-  }
-
-  const handleDesktopClick = (e: React.MouseEvent) => {
-    // Only handle clicks directly on the desktop, not on children
-    if (e.target === desktopRef.current) {
-      setActiveWindowId(null)
-      if (showControlCenter) setShowControlCenter(false)
-      if (showSpotlight) setShowSpotlight(false)
-    }
-  }
+  const activeWindow = openWindows.find((w) => w.id === activeWindowId) ?? null
 
   return (
-    <div className="relative">
-      <div
-        ref={desktopRef}
-        className={`relative h-screen w-screen overflow-hidden ${isDarkMode ? "dark" : ""}`}
-        onClick={handleDesktopClick}
-      >
-        <Wallpaper isDarkMode={isDarkMode} />
+    <SystemProvider value={system}>
+      <div className={`relative h-full w-full overflow-hidden ${isDarkMode ? "dark" : ""}`}>
+        <Wallpaper isDarkMode={isDarkMode} onClick={handleBackgroundClick} />
+
+        <DesktopIcons onOpen={openApp} />
 
         <Menubar
-          time={time}
           onLogout={onLogout}
           onSleep={onSleep}
           onShutdown={onShutdown}
           onRestart={onRestart}
-          onSpotlightClick={toggleSpotlight}
-          onControlCenterClick={toggleControlCenter}
-          isDarkMode={isDarkMode}
-          activeWindow={activeWindowId ? openWindows.find((w) => w.id === activeWindowId) || null : null}
+          onSpotlightClick={() => toggleOverlay("spotlight")}
+          onControlCenterClick={() => toggleOverlay("controlCenter")}
+          onOpenApp={openApp}
+          onCloseWindow={closeWindow}
+          onMinimizeWindow={minimizeWindow}
+          activeWindow={activeWindow}
         />
 
-        {/* Windows */}
-        <div className="absolute inset-0 pt-6 pb-16">
-          {openWindows.map((window) => (
+        {/* Windows layer: only the windows themselves catch clicks, so the wallpaper stays clickable */}
+        <div className="absolute inset-0 z-10 pointer-events-none">
+          {openWindows.map((appWindow) => (
             <Window
-              key={window.id}
-              window={window}
-              isActive={activeWindowId === window.id}
-              onClose={() => closeWindow(window.id)}
-              onFocus={() => setActiveWindow(window.id)}
+              key={appWindow.id}
+              appWindow={appWindow}
+              isActive={activeWindowId === appWindow.id}
+              isMinimized={minimizedIds.includes(appWindow.id)}
+              zIndex={zOrder.indexOf(appWindow.id) + 1}
+              onClose={() => closeWindow(appWindow.id)}
+              onMinimize={() => minimizeWindow(appWindow.id)}
+              onFocus={() => focusWindow(appWindow.id)}
               isDarkMode={isDarkMode}
             />
           ))}
         </div>
 
-        {/* Launchpad */}
-        {showLaunchpad && <Launchpad onAppClick={openApp} onClose={() => setShowLaunchpad(false)} />}
+        {overlay === "launchpad" && <Launchpad onAppClick={openApp} onClose={() => setOverlay(null)} />}
 
-        {/* Control Center */}
-        {showControlCenter && (
-          <ControlCenter
-            onClose={() => setShowControlCenter(false)}
-            isDarkMode={isDarkMode}
-            onToggleDarkMode={toggleDarkMode}
-            brightness={screenBrightness}
-            onBrightnessChange={updateBrightness}
-          />
-        )}
+        {overlay === "controlCenter" && <ControlCenter onClose={() => setOverlay(null)} />}
 
-        {/* Spotlight */}
-        {showSpotlight && <Spotlight onClose={() => setShowSpotlight(false)} onAppClick={openApp} />}
+        {overlay === "spotlight" && <Spotlight onClose={() => setOverlay(null)} onAppClick={openApp} />}
 
         <Dock
           onAppClick={openApp}
-          onLaunchpadClick={toggleLaunchpad}
-          activeAppIds={openWindows.map((w) => w.id)}
+          onLaunchpadClick={() => toggleOverlay("launchpad")}
+          openAppIds={openWindows.map((w) => w.id)}
           isDarkMode={isDarkMode}
         />
       </div>
-
-      {/* Brightness overlay */}
-      <div
-        className="absolute inset-0 bg-black pointer-events-none z-50 transition-opacity duration-300"
-        style={{ opacity: Math.max(0.1, 0.9 - screenBrightness / 100) }}
-      />
-    </div>
+    </SystemProvider>
   )
 }

@@ -1,302 +1,247 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ArrowLeft, ArrowRight, RefreshCw, Home, Star, Plus, Search, Wifi } from "lucide-react"
+import type React from "react"
+
+import { useState, useRef } from "react"
+import { ArrowLeft, ArrowRight, RefreshCw, Home, Search, WifiOff, ExternalLink, Github, Lock } from "lucide-react"
+import { useSystem } from "@/components/system-context"
+import { profile } from "@/lib/profile"
+import { projects, type Project } from "@/data/projects"
 
 interface SafariProps {
   isDarkMode?: boolean
 }
 
+const socialLinks = [
+  { title: "LinkedIn", url: profile.linkedin.url, icon: "/linkedin.png" },
+  { title: "GitHub", url: profile.github.url, icon: "/github.png" },
+  { title: "Email", url: `mailto:${profile.email}`, icon: "/mail.png" },
+]
+
+const frequentlyVisited = [
+  { title: "GitHub", url: "https://github.com", icon: "/github.png" },
+  { title: "LinkedIn", url: "https://linkedin.com", icon: "/linkedin.png" },
+  { title: "YouTube", url: "https://youtube.com", icon: "/youtube.png" },
+  { title: "Reddit", url: "https://reddit.com", icon: "/reddit.png" },
+  { title: "ChatGPT", url: "https://chatgpt.com", icon: "/chatgpt.png" },
+  { title: "Stack Overflow", url: "https://stackoverflow.com", icon: "/stackoverflow.png" },
+]
+
+const COVER_GRADIENTS = [
+  "from-green-500 to-emerald-700",
+  "from-sky-500 to-indigo-700",
+  "from-amber-500 to-orange-700",
+  "from-pink-500 to-purple-700",
+]
+
+const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer")
+
+// Turns whatever was typed in the address bar into a URL (or a web search)
+function toUrl(input: string) {
+  const value = input.trim()
+  if (/^https?:\/\//i.test(value)) return value
+  if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(value)) return `https://${value}`
+  return `https://www.google.com/search?q=${encodeURIComponent(value)}`
+}
+
 export default function Safari({ isDarkMode = true }: SafariProps) {
-  const [url, setUrl] = useState("https://github.com/mohamedarshad-code")
+  const { wifiEnabled } = useSystem()
+  const [address, setAddress] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState("home")
-  const [wifiEnabled, setWifiEnabled] = useState(true)
-
-  // Get WiFi status from localStorage or default to true
-  useEffect(() => {
-    const checkWifiStatus = () => {
-      const status = localStorage.getItem("wifiEnabled")
-      setWifiEnabled(status === null ? true : status === "true")
-    }
-
-    checkWifiStatus()
-
-    // Check every second in case it changes
-    const interval = setInterval(checkWifiStatus, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
+  const contentRef = useRef<HTMLDivElement>(null)
+  const projectsRef = useRef<HTMLElement>(null)
 
   const textColor = isDarkMode ? "text-white" : "text-gray-800"
   const bgColor = isDarkMode ? "bg-gray-900" : "bg-white"
   const toolbarBg = isDarkMode ? "bg-gray-800" : "bg-gray-100"
   const inputBg = isDarkMode ? "bg-gray-700" : "bg-gray-200"
   const borderColor = isDarkMode ? "border-gray-700" : "border-gray-200"
-  const cardBg = isDarkMode ? "bg-gray-800" : "bg-gray-100"
+  const cardBg = isDarkMode ? "bg-gray-800" : "bg-gray-50"
   const hoverBg = isDarkMode ? "hover:bg-gray-800" : "hover:bg-gray-100"
+  const iconButton = `p-1.5 rounded-md ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"} disabled:opacity-40`
+  const mutedText = isDarkMode ? "text-gray-400" : "text-gray-500"
 
   const handleRefresh = () => {
     setIsLoading(true)
-    setTimeout(() => {
-      setIsLoading(false)
-    }, 1000)
+    setTimeout(() => setIsLoading(false), 800)
   }
 
-  // Updated bookmarks with social links
-  const socialLinks = [
-    {
-      title: "LinkedIn",
-      url: "https://www.linkedin.com/in/mohamed-arshad-3b8269380/",
-      icon: "/linkedin.png",
-    },
-    {
-      title: "GitHub",
-      url: "https://github.com/mohamedarshad-code",
-      icon: "/github.png",
-    },
-  ]
+  const handleAddressSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!address.trim()) return
+    openExternal(toUrl(address))
+    setAddress("")
+  }
 
-  // Projects
-  const projects = [
-    {
-      title: "Spotify Clone",
-      description: "Full-featured music streaming app with playlists and search",
-      tech: "React • Next.js • TypeScript",
-      liveUrl: "https://spotify-clone-rho-swart.vercel.app/",
-      githubUrl: "https://github.com/mohamedarshad-code/spotify-clone",
-      icon: "/spotify.png",
-    },
-    {
-      title: "New Future Travels",
-      description: "Travel booking platform with tour packages and management",
-      tech: "MERN Stack • Tailwind CSS",
-      liveUrl: "https://new-future-travels-website.vercel.app/",
-      githubUrl: "https://github.com/mohamedarshad-code/new-future-travels-website",
-      icon: "/safari.png",
-    },
-    {
-      title: "Madras Coffee House",
-      description: "Premium coffee shop website with heritage light aesthetic",
-      tech: "React • Next.js • Tailwind CSS",
-      liveUrl: "https://madrascoffehouse.vercel.app/",
-      githubUrl: "https://github.com/mohamedarshad-code/madrascoffehouse",
-      icon: "/madras-coffee-project.png",
-    },
-  ]
+  const scrollToTop = () => contentRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+  const scrollToProjects = () => projectsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
 
-  const frequentlyVisited = [
-    {
-      title: "GitHub",
-      url: "https://github.com",
-      icon: "/github.png",
-    },
-    {
-      title: "LinkedIn",
-      url: "https://linkedin.com",
-      icon: "/linkedin.png",
-    },
-    {
-      title: "YouTube",
-      url: "https://youtube.com",
-      icon: "/youtube.png",
-    },
-    {
-      title: "Reddit",
-      url: "https://reddit.com",
-      icon: "/reddit.png",
-    },
-    {
-      title: "ChatGPT",
-      url: "https://chatgpt.com",
-      icon: "/chatgpt.png",
-    },
-    {
-      title: "Stack Overflow",
-      url: "https://stackoverflow.com",
-      icon: "/stackoverflow.png",
-    },
-  ]
-
-  // Add a no internet connection view
-  const NoInternetView = () => (
-    <div className="flex flex-col items-center justify-center h-full p-8">
-      <div
-        className={`w-24 h-24 mb-6 flex items-center justify-center rounded-full ${isDarkMode ? "bg-gray-800" : "bg-gray-200"}`}
-      >
-        <Wifi className={`w-12 h-12 ${isDarkMode ? "text-gray-600" : "text-gray-500"}`} />
-      </div>
-      <h2 className={`text-xl font-semibold mb-2 ${textColor}`}>You Are Not Connected to the Internet</h2>
-      <p className={`text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"} mb-6`}>
-        This page can't be displayed because your computer is currently offline.
-      </p>
+  const renderProjectCard = (project: Project, index: number) => (
+    <article
+      key={project.id}
+      className={`${cardBg} rounded-xl overflow-hidden border ${borderColor} hover:border-blue-500 transition-colors group flex flex-col`}
+    >
       <button
-        className={`px-4 py-2 rounded ${isDarkMode ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-500 hover:bg-blue-600"
-          } text-white`}
-        onClick={handleRefresh}
+        className="h-36 w-full overflow-hidden relative"
+        onClick={() => openExternal(project.liveUrl)}
+        aria-label={`Open ${project.title} live demo`}
       >
-        Try Again
+        {project.image ? (
+          <img
+            src={project.image}
+            alt=""
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        ) : (
+          <div
+            className={`w-full h-full bg-gradient-to-br ${COVER_GRADIENTS[index % COVER_GRADIENTS.length]} flex items-center justify-center group-hover:scale-105 transition-transform duration-300`}
+          >
+            <span className="text-white text-4xl font-bold drop-shadow">
+              {project.title
+                .split(" ")
+                .slice(0, 2)
+                .map((word) => word[0])
+                .join("")}
+            </span>
+          </div>
+        )}
+        <span className="absolute top-2 right-2 text-[10px] font-semibold uppercase tracking-wide bg-black/60 text-white px-2 py-0.5 rounded-full">
+          {project.category}
+        </span>
       </button>
-    </div>
+
+      <div className="p-4 flex flex-col flex-1">
+        <h3 className="font-semibold text-lg mb-1 group-hover:text-blue-500 transition-colors">{project.title}</h3>
+        <p className={`text-sm ${mutedText} mb-3 flex-1`}>{project.description}</p>
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {project.technologies.map((tech) => (
+            <span
+              key={tech}
+              className={`text-[11px] px-2 py-0.5 rounded-full ${isDarkMode ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-700"}`}
+            >
+              {tech}
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => openExternal(project.liveUrl)}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <ExternalLink className="w-4 h-4" /> View Live
+          </button>
+          <button
+            onClick={() => openExternal(project.githubUrl)}
+            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 ${
+              isDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-200 hover:bg-gray-300"
+            } rounded-lg text-sm font-medium transition-colors`}
+          >
+            <Github className="w-4 h-4" /> Code
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+
+  const renderTile = (site: { title: string; url: string; icon: string }) => (
+    <button
+      key={site.title + site.url}
+      className={`flex flex-col items-center p-3 rounded-lg ${hoverBg}`}
+      onClick={() => (site.url.startsWith("mailto:") ? (window.location.href = site.url) : openExternal(site.url))}
+    >
+      <span className="w-12 h-12 bg-white rounded-xl flex items-center justify-center mb-2 overflow-hidden shadow-sm">
+        <img src={site.icon} alt="" className="w-8 h-8 object-contain" />
+      </span>
+      <span className="text-xs text-center">{site.title}</span>
+    </button>
   )
 
   return (
     <div className={`h-full flex flex-col ${bgColor} ${textColor}`}>
       {/* Toolbar */}
-      <div className={`${toolbarBg} border-b ${borderColor} p-2 flex items-center space-x-2`}>
-        <button className={`p-1 rounded ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"}`}>
+      <div className={`${toolbarBg} border-b ${borderColor} p-2 flex items-center gap-1`}>
+        <button className={iconButton} disabled aria-label="Back">
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <button className={`p-1 rounded ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"}`}>
+        <button className={iconButton} disabled aria-label="Forward">
           <ArrowRight className="w-4 h-4" />
         </button>
-        <button
-          className={`p-1 rounded ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"}`}
-          onClick={handleRefresh}
-        >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-        </button>
-        <button className={`p-1 rounded ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"}`}>
+        <button className={iconButton} onClick={scrollToTop} aria-label="Home">
           <Home className="w-4 h-4" />
         </button>
 
-        <div className={`flex-1 flex items-center ${inputBg} rounded px-3 py-1`}>
-          <Search className="w-4 h-4 text-gray-500 mr-2" />
+        <form onSubmit={handleAddressSubmit} className={`flex-1 flex items-center ${inputBg} rounded-md px-3 py-1 mx-1 min-w-0`}>
+          {address ? <Search className="w-3.5 h-3.5 text-gray-500 mr-2 shrink-0" /> : <Lock className="w-3.5 h-3.5 text-gray-500 mr-2 shrink-0" />}
           <input
             type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className={`w-full bg-transparent focus:outline-none text-sm ${textColor}`}
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder={`${profile.firstName.toLowerCase()}.portfolio — search or enter website`}
+            aria-label="Address and search bar"
+            className={`w-full bg-transparent focus:outline-none text-sm ${textColor} placeholder:text-gray-500`}
           />
-        </div>
+        </form>
 
-        <button className={`p-1 rounded ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"}`}>
-          <Star className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Tab bar */}
-      <div className={`${toolbarBg} border-b ${borderColor} px-2 flex items-center`}>
-        <div
-          className={`px-3 py-1 text-sm rounded-t flex items-center ${activeTab === "home" ? (isDarkMode ? "bg-gray-900" : "bg-white") : ""}`}
-        >
-          <span className="mr-2">Home</span>
-          <button className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-gray-500">
-            <span className="text-xs">×</span>
-          </button>
-        </div>
-        <button className={`p-1 rounded ${isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"}`}>
-          <Plus className="w-4 h-4" />
+        <button className={iconButton} onClick={handleRefresh} aria-label="Reload">
+          <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div ref={contentRef} className="flex-1 overflow-auto">
         {!wifiEnabled ? (
-          <NoInternetView />
-        ) : (
-          activeTab === "home" && (
-            <div className="p-8">
-              <h2 className="text-2xl font-bold mb-6">SNS Links</h2>
-
-              <div className="grid grid-cols-5 sm:grid-cols-7 gap-6 mb-12">
-                {socialLinks.map((link, index) => (
-                  <div
-                    key={index}
-                    className={`flex flex-col items-center p-4 rounded-lg ${hoverBg} cursor-pointer`}
-                    onClick={() => window.open(link.url, "_blank")}
-                  >
-                    <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center mb-2 overflow-hidden">
-                      <img src={link.icon || "/placeholder.svg"} alt={link.title} className="w-8 h-8 object-contain" />
-                    </div>
-                    <span className="text-sm text-center">{link.title}</span>
-                  </div>
-                ))}
-              </div>
-
-              <h2 className="text-2xl font-bold mb-6">Frequently Visited</h2>
-
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-6 mb-12">
-                {frequentlyVisited.map((site, index) => (
-                  <div
-                    key={index}
-                    className={`flex flex-col items-center p-4 rounded-lg ${hoverBg} cursor-pointer`}
-                    onClick={() => window.open(site.url, "_blank")}
-                  >
-                    <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center mb-2 overflow-hidden">
-                      <img src={site.icon || "/placeholder.svg"} alt={site.title} className="w-8 h-8 object-contain" />
-                    </div>
-                    <span className="text-sm text-center">{site.title}</span>
-                  </div>
-                ))}
-              </div>
-
-              <h2 className="text-2xl font-bold mb-6">My Projects</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-                {projects.map((project, index) => (
-                  <div
-                    key={index}
-                    className={`${cardBg} rounded-xl p-6 border ${borderColor} hover:border-blue-500 transition-all cursor-pointer group`}
-                  >
-                    <div className="flex items-start gap-4 mb-4">
-                      <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
-                        <img src={project.icon || "/placeholder.svg"} alt={project.title} className="w-8 h-8 object-contain" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg mb-1 group-hover:text-blue-500 transition-colors">
-                          {project.title}
-                        </h3>
-                        <p className="text-xs text-gray-500">{project.tech}</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-400 mb-4">{project.description}</p>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          window.open(project.liveUrl, "_blank")
-                        }}
-                        className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
-                      >
-                        View Live
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          window.open(project.githubUrl, "_blank")
-                        }}
-                        className={`flex-1 px-4 py-2 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} rounded-lg text-sm font-medium transition-colors`}
-                      >
-                        GitHub
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-8 max-w-2xl mx-auto">
-                <div className={`p-6 rounded-lg ${cardBg}`}>
-                  <h3 className="text-xl font-semibold mb-4">Mohamed Arshad M - Portfolio</h3>
-                  <p className="mb-4">
-                    Welcome to my portfolio! I'm a Full Stack & Flutter Developer specializing in building scalable
-                    web and mobile applications with modern technologies.
-                  </p>
-                  <p className="mb-4">
-                    With expertise in React, Next.js, Flutter, Firebase, and TypeScript, I deliver end-to-end solutions
-                    from concept to deployment.
-                  </p>
-                  <div className="flex justify-end">
-                    <button
-                      className={`px-4 py-2 rounded ${isDarkMode ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-500 hover:bg-blue-600"} text-white`}
-                    >
-                      View Projects
-                    </button>
-                  </div>
-                </div>
-              </div>
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <div className={`w-24 h-24 mb-6 flex items-center justify-center rounded-full ${isDarkMode ? "bg-gray-800" : "bg-gray-200"}`}>
+              <WifiOff className={`w-12 h-12 ${mutedText}`} />
             </div>
-          )
+            <h2 className="text-xl font-semibold mb-2">You Are Not Connected to the Internet</h2>
+            <p className={`${mutedText} mb-6 max-w-sm`}>
+              This page can&apos;t be displayed because your computer is currently offline. Turn Wi-Fi back on from the
+              menu bar or Control Center.
+            </p>
+            <button className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600 text-white" onClick={handleRefresh}>
+              Try Again
+            </button>
+          </div>
+        ) : (
+          <div className={`p-5 sm:p-8 max-w-5xl mx-auto transition-opacity ${isLoading ? "opacity-40" : "opacity-100"}`}>
+            {/* Hero */}
+            <section className={`mb-10 p-6 rounded-2xl bg-gradient-to-br ${isDarkMode ? "from-blue-900/50 to-purple-900/50" : "from-blue-50 to-purple-50"} border ${borderColor}`}>
+              <p className={`text-sm ${mutedText} mb-1`}>Hi, I&apos;m</p>
+              <h1 className="text-3xl sm:text-4xl font-bold mb-2">{profile.name}</h1>
+              <p className="text-lg text-blue-500 font-medium mb-3">{profile.role}</p>
+              <p className={`${mutedText} max-w-2xl mb-5`}>{profile.bio}</p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={scrollToProjects}
+                  className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium"
+                >
+                  View Projects
+                </button>
+                <button
+                  onClick={() => openExternal(profile.github.url)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${isDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100 border border-gray-300"}`}
+                >
+                  GitHub Profile
+                </button>
+              </div>
+            </section>
+
+            <section ref={projectsRef} className="mb-10 scroll-mt-4">
+              <h2 className="text-2xl font-bold mb-5">My Projects</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">{projects.map(renderProjectCard)}</div>
+            </section>
+
+            <section className="mb-10">
+              <h2 className="text-2xl font-bold mb-4">Social Links</h2>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">{socialLinks.map(renderTile)}</div>
+            </section>
+
+            <section className="mb-6">
+              <h2 className="text-2xl font-bold mb-4">Frequently Visited</h2>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">{frequentlyVisited.map(renderTile)}</div>
+            </section>
+          </div>
         )}
       </div>
     </div>
